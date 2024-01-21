@@ -9,4 +9,4 @@ Following the workflow depicted below:
 
 For details please see Hindley, N., Keall, P., Booth, J. and Shieh, C.‐C. (2019), Real‐time direct diaphragm tracking using kV imaging on a standard linear accelerator. Med. Phys., 46: 4481-4489. doi:10.1002/mp.13738
 
-![Proposed clinical workflow for the diaphragm tracking algorithm](https://github.sydney.edu.au/Image-X/DiaphragmTracking/blob/master/Workflow.jpg?raw=true)
+![Proposed clinical workflow for the diaphragm tracking algorithm](https://github.com/Image-X-Institute/DiaphragmTracking/blob/master/Workflow.jpg?raw=true)
