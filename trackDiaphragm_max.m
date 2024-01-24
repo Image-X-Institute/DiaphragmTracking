@@ -1,41 +1,8 @@
-function [trj3D,metricVal,trackFrame,map2D] = ...
-    trackDiaphragm(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
-%% [trj3D,metricVal,trackFrame,map2D] = trackDiaphragm(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
-% ------------------------------------------
-% FILE   : trackDiaphragm.m
-% AUTHOR : Andy Shieh, ACRF Image X Institute, The University of Sydney
-% DATE   : 2018-02-18  Created.
-%          2018-07-11  Major update to work with the new version of
-%                      segmentDiaphragm.m and get2DDiaphragmModel.m
-% ------------------------------------------
-% PURPOSE
-%   Track diaphragms from projection images using a pre-built 3D model.
-% ------------------------------------------
-% INPUT
-%   projList:       List of projection files in cell format (use lscell)
-%   model:          The 2D diaphragm model (use get2DDiaphragmModel)
-%   geometryFile:   The RTK geometry .xml file.
-%   flipTag:        Whether or not to flip the projection in the vertical
-%                   direction.
-%                   Default = false
-%   invertTag:      Whether or not to invert projection intensity.
-%                   Default = false
-%   r:              (Optional) Search radius in the 3D image space in mm.
-%                   Default: 3 mm but 10 mm in the first frame
-%   excMargin:      (Optional) Number of pixels to exclude on the left,
-%                   top, right, and bottom boundaries.
-%                   Default: [0,0,0,0]
-%   frameInd:       (Optional) The indices of the frames to track.
-%                   e.g. 1:500
-%                   Default: All the frames
-%
-% OUTPUT
-%   trj3D:          The 3D trajectory of the diaphragm, with [0,0,0] being
-%                   its position in the prior model.
-%   metricVal:      The match scores for each frame (higher = better match)
-%   trackFrames:    The visualization frames.
-%   map2D:          The binary masks of the tracked diaphragm points.
-
+function [trj3D,metricVal,trackFrame] = ...
+    trackDiaphragm_max(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
+%% Update to trackDiaphragm.m to score candidate positions based on Pearson correlation
+% for model: suggest get2DDiaphragmModel.m
+% for pcVec: suggest getDph3DShift.m
 %% Input check
 if nargin < 4
     flipTag = false;
@@ -50,7 +17,7 @@ if nargin < 6
 end
 
 if nargin < 7
-    excMargin = [0,0,0,0];
+    excMargin = [10,10,10,20];
 end
 
 if nargin < 8
@@ -61,21 +28,34 @@ end
 initr = 10; % Initial search radius
 w = 2;      % Margin (in 3D space mm) for calculating neighboring intensity
 
-%% Gather geometry information
-ang = ReadAnglesFromRTKGeometry(geometryFile);
-sid = ReadTagFromRTKGeometry('Geometry.xml','SourceToIsocenterDistance');
-sdd = ReadTagFromRTKGeometry('Geometry.xml','SourceToDetectorDistance');
+%% Initialization
+fprintf('Initializing......');
+tic;
 
-%% Start tracking
+ang = ReadAnglesFromRTKGeometry(geometryFile);
+sid = 785;%ReadTagFromRTKGeometry('Geometry.xml','SourceToIsocenterDistance');
+sdd = 1300;%ReadTagFromRTKGeometry('Geometry.xml','SourceToDetectorDistance');
+
+% Pre-calculated v-sum-weighted map
+% The V-sum-weighted map makes sure each u value is treated equally
+map = model.Map2D_R + model.Map2D_L;
+mapWeighted = map;
+for k = 1:size(mapWeighted,3)
+    mapWeighted(:,:,k) = mapWeighted(:,:,k) ./ (sum(mapWeighted(:,:,k),2) * ones(1,size(mapWeighted,2)));
+end
+mapWeighted(isnan(mapWeighted) | isinf(mapWeighted)) = 0;
+
+% Pre-allocation
+[~,P] = ProjRead(projList{frameInd(1)});
+trackedMap = single(zeros([size(P),length(frameInd)]));
+
 dv_prev = 0; % dv is SI shift in projcetion pixel coordinate
 fh = figure('units','normalized','outerposition',[0.1,0.1,0.8,0.8]);
 nCount = 0;
 
-% Pre-allocation
-[~,P] = ProjRead(projList{frameInd(1)});
-map2D = zeros([size(P),length(frameInd)]);
-
-for n = frameInd
+fprintf('%f seconds\n',toc);
+%% Start tracking
+for n = 1:505%frameInd
     fprintf('Frame#%05d......',n);
     nCount = nCount + 1;
     % Read projection
@@ -126,7 +106,7 @@ for n = frameInd
     P(:,1:excMargin(2)) = nan;
     P(:,end-excMargin(4)+1:end) = nan;
     
-    % Pre-calculate w-Pixel averaged difference map
+   % Pre-calculate w-Pixel averaged difference map
     imgAvgAbv = zeros(size(P));
     imgAvgBlw = zeros(size(P));
     for kw = 1:wPix
@@ -144,20 +124,25 @@ for n = frameInd
     diffImg(:,1+excMargin(2)) = 0;
     
     % Select which frame of the 2D model to use
+    %ang = projInfo.dCBCTPositiveAngle;
     indModel = find(abs(mod(ang(n),360) - mod(model.Angles,360)) == min(abs(mod(ang(n),360) - mod(model.Angles,360))));
+    %indModel = find(abs(mod(ang,360) - mod(model.Angles,360)) == min(abs(mod(ang,360) - mod(model.Angles,360))));
     indModel = indModel(1);
-    map = model.Map2D_L(:,:,indModel) + model.Map2D_R(:,:,indModel);
+    map_this = map(:,:,indModel);
+    mapWeighted_this = mapWeighted(:,:,indModel);
     
     % Go through search window
     dvCand = (dv_prev-rPix):(dv_prev+rPix);
     % Calculate the lateral shift for this particular SI shift by
     % using the principle component vector
-    duCand = round((cosd(ang(n)) * model.PCVec(1) - sind(ang(n)) * model.PCVec(3)) ...
-        * dvCand / model.PCVec(2) * spacingY / spacingX);
+     duCand = round((cosd(ang(n)) * model.PCVec(1) - sind(ang(n)) * model.PCVec(3)) ...
+         * dvCand / model.PCVec(2) * spacingY / spacingX);
+%duCand = round((cosd(ang) * model.PCVec(1) - sind(ang) * model.PCVec(3)) ...
+%        * dvCand / model.PCVec(2) * spacingY / spacingX);
     metricVec = zeros(length(dvCand),1);
     % Find 2D index of non-zero map pixels
-    mapIdx = find(map>0);
-    [mapX,mapY] = ind2sub(size(map),mapIdx);
+    mapIdx = find(mapWeighted_this>0);
+    [mapX,mapY] = ind2sub(size(mapWeighted_this),mapIdx);
     for k = 1:length(dvCand)
         % Calculate shifted pixel index
         shiftedX = mapX + duCand(k);
@@ -165,10 +150,10 @@ for n = frameInd
         % Find pixels within the valid FOV
         indIncl = find(shiftedX >= 1 + excMargin(1) & shiftedX <= size(P,1) - excMargin(3) & shiftedY >= 1 + excMargin(2) & shiftedY <= size(P,2) - excMargin(4));
         % Convert x y to 1D index
-        shiftedIdx = sub2ind(size(map),shiftedX(indIncl),shiftedY(indIncl));
+        shiftedIdx = sub2ind(size(mapWeighted_this),shiftedX(indIncl),shiftedY(indIncl));
         
         % Calculate tracking metric
-        metricVec(k) = sum( diffImg(shiftedIdx) .* map(mapIdx(indIncl)) ) / sum(map(mapIdx(indIncl))) * sum( diffImg(shiftedIdx));
+        metricVec(k) = sum(diffImg(shiftedIdx).* mapWeighted_this(mapIdx(indIncl)));
     end
     
     % Find best match
@@ -187,8 +172,9 @@ for n = frameInd
     % Create results for visualisation
     fprintf('Visualizing......');
     tic;
-    mapShifted = imtranslate(map,[dv_prev,du_prev]);
-    map2D(:,:,nCount) = mapShifted;
+    % We record and use the non-weighted map for visualization
+    mapShifted = imtranslate(map_this,[dv_prev,du_prev]);
+    trackedMap(:,:,nCount) = mapShifted;
     
     winMin = prctile(P(:),1); winMax = prctile(P(:),99);
     pVis = (P - winMin) / (winMax - winMin) * 255;
@@ -201,12 +187,19 @@ for n = frameInd
     pVis(:,:,2) = pVis; pVis(:,:,3) = pB;
     imagesc(pVis); axis image; axis off;
     [~,fileName] = fileparts(projList{n});
-    text(20,30,[fileName,'   SI shift = ',num2str(trj3D(n,2),'%f'),' mm'],'color','blue','FontSize',14);
+    text(20,30,['Frame: ', num2str(n),'   SI shift: ',num2str(trj3D(n,2),'%.1f'),' mm'],'color','blue','FontSize',14);
     trackFrame(nCount) = getframe(fh);
     
     fprintf('%f seconds......\n',toc);
 end
 
 close(fh);
+
+%% Write tracking movie to .avi
+vw = VideoWriter(fullfile(pwd,'trackDph.avi'));
+vw.FrameRate = 10;
+vw.open;
+vw.writeVideo(trackFrame);
+vw.close;
 
 end
