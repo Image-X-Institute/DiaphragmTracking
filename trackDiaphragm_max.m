@@ -55,7 +55,7 @@ nCount = 0;
 
 fprintf('%f seconds\n',toc);
 %% Start tracking
-for n = 1:505%frameInd
+for n = 1:frameInd
     fprintf('Frame#%05d......',n);
     nCount = nCount + 1;
     % Read projection
