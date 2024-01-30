@@ -1,5 +1,5 @@
 function [trj3D,metricVal,trackFrame] = ...
-    trackDiaphragm_max(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
+    trackDiaphragm_corrcoef(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
 %% Update to trackDiaphragm.m to score candidate positions based on Pearson correlation
 % for model: suggest get2DDiaphragmModel.m
 % for pcVec: suggest getDph3DShift.m
@@ -55,7 +55,7 @@ nCount = 0;
 
 fprintf('%f seconds\n',toc);
 %% Start tracking
-for n = 1:frameInd
+for n = frameInd
     fprintf('Frame#%05d......',n);
     nCount = nCount + 1;
     % Read projection
@@ -138,7 +138,7 @@ for n = 1:frameInd
      duCand = round((cosd(ang(n)) * model.PCVec(1) - sind(ang(n)) * model.PCVec(3)) ...
          * dvCand / model.PCVec(2) * spacingY / spacingX);
 %duCand = round((cosd(ang) * model.PCVec(1) - sind(ang) * model.PCVec(3)) ...
-%        * dvCand / model.PCVec(2) * spacingY / spacingX);
+        %* dvCand / model.PCVec(2) * spacingY / spacingX);
     metricVec = zeros(length(dvCand),1);
     % Find 2D index of non-zero map pixels
     mapIdx = find(mapWeighted_this>0);
