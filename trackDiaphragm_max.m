@@ -1,5 +1,5 @@
 function [trj3D,metricVal,trackFrame] = ...
-    trackDiaphragm_corrcoef(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
+    trackDiaphragm_max(projList,model,geometryFile,flipTag,invertTag,r,excMargin,frameInd)
 %% Update to trackDiaphragm.m to score candidate positions based on Pearson correlation
 % for model: suggest get2DDiaphragmModel.m
 % for pcVec: suggest getDph3DShift.m
