@@ -12,7 +12,9 @@ function DICOM2MHA(dicomList)
 %   dicomList:      A list of dicom files in cell format (use "lscell")
 
 %% Input check
-dicomList = lscell('CT*');
+if nargin < 1
+    dicomList = lscell('CT*');
+end
 outputFile = 'CT.mha';
 waterAtt = 0.013;
 
